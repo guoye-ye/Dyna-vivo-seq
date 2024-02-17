@@ -1,35 +1,115 @@
 # Dyna_vivo_seq pipline
 
-#### This pipline description mainly revolves around the generation of expression matrices with metabolically labeled transcripts using Dyna-vivo-seq, the generation of new and old transcript count matrices without labels, and the calculation of TC base mutation rates .
+###### This pipline description mainly revolves around the generation of expression matrices with metabolically labeled transcripts using Dyna-vivo-seq, the generation of new and old transcript count matrices without labels, and the calculation of TC base mutation rates .
 
-- ###### Main steps
+## Set Up Environment
 
-[Step1](): Utilize the Drop-seq pipeline (James Nemesh, McCarroll Lab, version 1.12; Macosko et al., 2015) and the STAR v2.7.3a workflow for reads trimming and  alignment. In addition,both exonic and intronic regions that mapped to annotated gene loci were retained for downstream analysis.This step Modified from well-temp-seq.
+###### [Prerequisites]()
+
+```
+System: centOS
+Drop-seq 2.4.0
+python 3.9.13
+R 4.2.1
+Java JDK 11 11.0.14
+picard.jar
+perl
+sam2tsv
+Pysam
+```
+
+You can build the environment with Anaconda，and  use Annaconda to install the necessary packages or tools, please refer to the website for specific commands:https://anaconda.org/:
+
+```
+conda create -n demo python==3.9.13
+conda activate demo
+pip install package_name
+conda install package_name ##https://anaconda.org/
+
+```
+
+
+
+## Running the Code
+
+### Usage and Options:
+
+- Step1: Utilize the Drop-seq pipeline (James Nemesh, McCarroll Lab, version 1.12; Macosko et al., 2015) and the STAR v2.7.3a workflow for reads trimming and  alignment. In addition,both exonic and intronic regions that mapped to annotated gene loci were retained for downstream analysis.This step Modified from well-temp-seq.
 
 ```
 python ~/Matrix_generation/drop-seq/Drop-seq_step1_GRCm38.py -F1
 ../raw/sample_name_S3_L006_R1_001.fastq.gz -F2 ../raw/sample_name_S3_L006_R2_001.fastq.gz -SM sample_name
 ```
 
-The following steps refer to the scNT pipeline
+If you wish to perform inference on your own dataset, simply replace `sample_name_*.gz` with your own sequencing data.
 
-[Step2]():Identification of T-to-C substitutions in control and experimental samples (without IAA treatment, as background)
-
-```
-sh ~/Matrix_generation/Step2_extract_alignment_info_GRCm38.sh . sample_name
-```
-
-[Step3]():exclude the genomic sites with background T-to-C substitutions .
+More usage for **inference**:
 
 ```
-###For samples without IAA treatment, a background deduction cannot be made using the following command
-perl ~/Matrix_generation/drop-seq/scripts/TagIntronicRead_V5.pl -read
-sample1_name_both_strand_all_TC.tsv_q27.tsv -bam ../sample1_name_star_gene_exon_tagged_TagIntronic_clean.bam
-###The sample with IAA treatment needs to subtract background mutations through a control group. Use the following command
-sh ~/Matrix_generation/Step3_substract_background_locus.sh sample_name2 sample_name1 ../ . ../../sample_name1/Step2/
+python Drop-seq_step1_GRCm38.py \
+-p /path/to/picard.jar \
+-F1 fastq_file \
+-F2 fastq_file \
+-SM sample_name \
+-SR /path/to/STAR_REFERENCE \
+-RF /path/to/REFERENCE_FASTQ \
+-RG /path/to/REFERENCE_GTF \
+-DD /path/to/Drop-seq_tools-2.4.0
 ```
 
-[Step4]():Labeled and unlabeled transcripts gene expression matrix output
+Options for **inference**:
+
+```
+-p      directory of picard.jar 
+-F1     Input fastq file (optionally gzipped) for single end data, or first read in paired end.
+-F2     Input fastq file (optionally gzipped) for the second read of paired end data. Default value: null
+-SM     sample_name
+-SR     directory of STAR_REFERENCE 
+-RF     directory of REFERENCE_FASTQ,Default file:Mus_musculus.GRCm38.dna.primary_assembly.fa
+-RG     directory of REFERENCE_GTF,Default file:Mus_musculus.GRCm38.98.gtf 
+-DD     directory of Drop-seq_tools-2.4.0 
+```
+
+
+
+- Step2:Identification of T-to-C substitutions in control and experimental samples (without IAA treatment, as background)
+
+```
+out_dir =./
+sh /path/to/Step2_extract_alignment_info_GRCm38.sh <out_dir> <sample_name>
+
+```
+
+
+
+- Step3:This step excludes the locus which has T->C mutations in control sample ,and needs to be performed in two cases:
+
+  For samples without IAA treatment, a background deduction cannot be made using the following command
+
+```
+perl ~/Matrix_generation/scripts/TagIntronicRead_V5.pl -read
+control_name_both_strand_all_TC.tsv_q27.tsv -bam ../control_name_star_gene_exon_tagged_TagIntronic_clean.bam
+
+### More usage for inference
+perl TagIntronicRead_V5.pl \    
+-read /path/to/*both_strand_all_TC.tsv_q27.tsv \            ### tsv file of readID with T->C mutations 
+-bam /path/to/*star_gene_exon_tagged_TagIntronic_clean.bam  ### clean bam file generated in step1
+
+```
+
+   The samples with IAA treatment needs to subtract background mutations through a control group. Use the following command
+
+```
+sh ~/Matrix_generation/Step3_substract_background_locus.sh sample_name control_name ../ . ../../control_name/Step2/
+
+### More usage for inference
+sh Step3_substract_background_locus.sh <sample_name> <control_name> <Step1_dir> <Step2_dir> <control_Step2_dir>
+
+```
+
+
+
+- Step4:Labeled and unlabeled transcripts gene expression matrix output
 
 ```
 sh ~/Matrix_generation/Step4_genetare_TC_matrix.sh . sample_name cell_number
@@ -40,20 +120,36 @@ sh ~/Matrix_generation/Step4_genetare_TC_matrix.sh . sample_name cell_number
 ```
 python ~/Matrix_generation/Step2_DGE.py -b
 *_star_gene_exon_tagged_TagIntronic_clean.bam -m F -n cell_number -sm sample_name
+
+###More usage for inference
+python Step2_DGE.py \         
+-b /path/to/bam_file \         ##my_clean.bam generated by Drop-seq_step1_GRCm38.py
+-m T / F \                     ##T/True: human+mouse; F/False: human/mouse
+-f Y / N \                     ##This is required when "mix = True". FilterBam finished or not
+-c cell_selection_num \        ##This is required when "mix = True". How many cell barcodes you want to extract from out_cell_readcounts.txt to generate cell_bc_file.txt, which is used to extract human/mouse DGE
+-n num_cell_barcode \          ##This is required when "mix = False". NUM_CORE_BARCODES / how many cells you want to extract from your BAM? / The number of cell barcodes to the left of the inflection point in the Rplots.pdf generated by Drop-seq_step1_GRCm38.py
+-sm SAMPLE_NAME \              ##Sample name to insert into the read group header Required
+-D directory of output file    ##The directory of output file
 ```
 
-- ###### TC mutation proportion statistics
+- ###### Calculation of TC mutation rate 
 
 ```
-mkdir {cluster,label_ratio,library,mutation}
+mkdir mutation
 cd mutation
 Rscript
-~/plot/mutation_rate_cmd_v4.R  <input>  <file1>  <file2>  <file..> 
-file123 : ../sample_name3/Step2/*_both_strand_all.tsv_q27_gene_anno_stat.txt
+/path/to/plot/mutation_rate_cmd_v4.R  <file1>  <file2>  <file3>  <file..> 
+
+Rscript
+~/plot/mutation_rate_cmd_v2.R ../NC-kid3/Step2/*_both_strand_all.tsv_q27_gene_anno_stat.txt ../4SU-kid2/Step2/*_both_strand_all.tsv_q27_gene_anno_stat.txt ../4SU-kid3/Step2/*_both_strand_all.tsv_q27_gene_anno_stat.txt
+###file... : *_both_strand_all.tsv_q27_gene_anno_stat.txt ,statistical result of all types of mutation rate. 
+
+
 ```
 
-- Generate rds without TC labeling
-- Total RDS with noType
+- **Generate rds files of matrices without TC labeling**
+
+Total RDS with noType
 
 ```
 ##Barcode was extracted from rds files with mutation tags
@@ -76,7 +172,7 @@ w_old_total_4cmd_v2.R $id $cb_file cellnum $sample total
 done
 ```
 
-- New old RDS-NoType
+New old RDS-NoType
 
 ```
 ##Generate intermediate file *corrected_gene_cell_UMI_read.txt
@@ -112,4 +208,14 @@ Rscript
 w_old_total_4cmd_v2.R $id $cb_file cellnum $sample old
 done
 ```
-Data:Raw data files are available at NCBI Gene Expression Omnibus (GEO):
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## data
+
+Raw data files are available at NCBI Gene Expression Omnibus (GEO):[GEO Accession viewer (nih.gov)](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE253836)
+
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE253836
+
